@@ -1,0 +1,91 @@
+import json
+import boto3
+import os
+
+s3 = boto3.client('s3')
+ses = boto3.client('ses')
+
+def lambda_handler(event, context):
+    print("Event:", json.dumps(event, indent=2))  # Print the entire event object
+    
+    try:
+        # Check if 'Records' key exists in the event
+        if 'Records' not in event:
+            raise KeyError("The 'Records' key is not in the event. Please check the event source.")
+        
+        # Get the bucket name and file key from the S3 event
+        bucket_name = event['Records'][0]['s3']['bucket']['name']
+        file_key = event['Records'][0]['s3']['object']['key']
+        
+        # Retrieve the email IDs file from S3
+        response = s3.get_object(Bucket=bucket_name, Key=file_key)
+        file_content = response['Body'].read().decode('utf-8')
+        email_ids = file_content.strip().split('\n')
+        
+        # Send an email to each ID using SES
+        for email_id in email_ids:
+            send_email(email_id)
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Emails sent successfully!')
+        }
+        
+    except KeyError as e:
+        print(f"KeyError: {e}.")
+        return {
+            'statusCode': 400,
+            'body': json.dumps(f"Bad Request: {e}")
+        }
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Error processing file.')
+        }
+
+def send_email(email_id):
+    SENDER = "agarwalamish624@gmail.com"
+    SUBJECT = "Test Email from AWS Lambda"
+    BODY_TEXT = ("Hello,\r\n"
+                 "This is a test email sent from an AWS Lambda function.")
+    BODY_HTML = """<html>
+    <head></head>
+    <body>
+      <h1>Hello!</h1>
+      <p>This is a test email sent from an AWS Lambda function.</p>
+    </body>
+    </html>"""
+    
+    CHARSET = "UTF-8"
+    
+    try:
+        response = ses.send_email(
+            Destination={
+                'ToAddresses': [
+                    email_id,
+                ],
+            },
+            Message={
+                'Body': {
+                    'Html': {
+                        'Charset': CHARSET,
+                        'Data': BODY_HTML,
+                    },
+                    'Text': {
+                        'Charset': CHARSET,
+                        'Data': BODY_TEXT,
+                    },
+                },
+                'Subject': {
+                    'Charset': CHARSET,
+                    'Data': SUBJECT,
+                },
+            },
+            Source=SENDER,
+        )
+        print(f"Email sent to {email_id}! Message ID: {response['MessageId']}")
+        
+    except Exception as e:
+        print(f"Error sending email to {email_id}: {e}")
+
